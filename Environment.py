@@ -4,6 +4,7 @@ import pymunk.pygame_util
 import math
 import random
 
+from mpmath.libmp import normalize
 from pygame.math import clamp
 
 WIDTH, HEIGHT = 800, 600
@@ -16,19 +17,19 @@ wind_range = max_wind_force - min_wind_force
 point = (0, 0)
 FPS = 60
 
-kp_x = -1
-ki_x = -0.5
-kd_x = -70
+kp_x = -1/80
+ki_x = -0.5/80
+kd_x = -70/80
 
-kp_y = 25  # Slightly reduced to lessen overshoot.
-ki_y = 30  # Integral term stays moderate to counter drift.
-kd_y = 500   # Increased damping to better control oscillations.
+kp_y = 25/80  # Slightly reduced to lessen overshoot.
+ki_y = 30/80  # Integral term stays moderate to counter drift.
+kd_y = 500/80   # Increased damping to better control oscillations.
 
-kp_angle = -500   # Increase proportional term to address the tilt more aggressively.
-ki_angle = -400  # A tiny integral term to handle persistent tilt offsets.
-kd_angle = -5500   # Strong damping to suppress oscillations in angular motion.
+kp_angle = -500/80   # Increase proportional term to address the tilt more aggressively.
+ki_angle = -400/80  # A tiny integral term to handle persistent tilt offsets.
+kd_angle = -5500/80   # Strong damping to suppress oscillations in angular motion.
 
-
+export_csv = True
 
 # culori
 WHITE = (255, 255, 255)
@@ -95,23 +96,13 @@ def generateForces():
     return rnd_x_force, rnd_y_force
 
 
-def PID_control_x(drone, target_position, errors_x):
-    current_x = drone.position.x
-    for i in range(2, 0, -1):
-        errors_x[i] = errors_x[i - 1]
-    errors_x[0] = target_position[0] - current_x
-
+def PID_control_x(errors_x):
     clamped_errors_x = [clamp(i, -100, 100) for i in errors_x]
     PID_x = kp_x * clamped_errors_x[0] + ki_x * (clamped_errors_x[0] + clamped_errors_x[1] + clamped_errors_x[2]) + kd_x * (clamped_errors_x[0] - clamped_errors_x[2])
     return PID_x
 
 
-def PID_control_y(drone, target_position, errors_y):
-    current_y = drone.position.y
-    gravity_compensation = 981 * 8
-    for i in range(2, 0, -1):
-        errors_y[i] = errors_y[i - 1]
-    errors_y[0] = target_position[1] - current_y
+def PID_control_y(errors_y):
 
     clamped_errors_y = [clamp(i, -100, 100) for i in errors_y]
     PID_y = kp_y * clamped_errors_y[0] + ki_y * (clamped_errors_y[0] + clamped_errors_y[1] + clamped_errors_y[2]) + kd_y * (clamped_errors_y[0] - clamped_errors_y[2])
@@ -119,16 +110,23 @@ def PID_control_y(drone, target_position, errors_y):
     return PID_y
 
 
-def PID_control_angle(drone, target_angle, errors_angle):
-    current_angle = drone.angle
-    for i in range(2, 0, -1):
-        errors_angle[i] = errors_angle[i - 1]
-
-    errors_angle[0] = target_angle - current_angle
-
+def PID_control_angle(errors_angle):
     PID_angle = kp_angle * errors_angle[0] + ki_angle * (
                 errors_angle[0] + errors_angle[1] + errors_angle[2]) + kd_angle * (errors_angle[0] - errors_angle[2])
     return PID_angle
+
+def controller(input) -> (float, float):
+    pid_ctrl_x_output = PID_control_x(input[0:3])
+    pid_ctrl_y_output = PID_control_y(input[3:6])
+    pid_ctrl_angle_output = PID_control_angle(input[6:9])
+
+    thruster_left = pid_ctrl_y_output + pid_ctrl_x_output + pid_ctrl_angle_output
+    thruster_right = pid_ctrl_y_output - pid_ctrl_x_output - pid_ctrl_angle_output
+
+    thruster_left = clamp(thruster_left, -80, 0)
+    thruster_right = clamp(thruster_right, -80, 0)
+
+    return thruster_left, thruster_right
 
 
 def main():
@@ -208,17 +206,38 @@ def main():
                     print("KEY S pressed")
 
         ##############################
-        pid_ctrl_y_output       = PID_control_y(drone, target_position, errors_y)
-        pid_ctrl_x_output       = PID_control_x(drone, target_position, errors_x)
-        pid_ctrl_angle_output   = PID_control_angle(drone, target_angle, errors_angle)
 
-        thruster_left = pid_ctrl_y_output + pid_ctrl_x_output + pid_ctrl_angle_output
-        thruster_right = pid_ctrl_y_output - pid_ctrl_x_output - pid_ctrl_angle_output
+        current_x = drone.position.x
+        for i in range(2, 0, -1):
+            errors_x[i] = errors_x[i - 1]
+        errors_x[0] = target_position[0] - current_x
 
-        thruster_left = clamp(thruster_left, -8000, 0)
-        thruster_right = clamp(thruster_right, -8000, 0)
+        current_y = drone.position.y
+        for i in range(2, 0, -1):
+            errors_y[i] = errors_y[i - 1]
+        errors_y[0] = target_position[1] - current_y
+
+        current_angle = drone.angle
+        for i in range(2, 0, -1):
+            errors_angle[i] = errors_angle[i - 1]
+
+        errors_angle[0] = target_angle - current_angle
+
+        input_x = [clamp(i, -100, 100) / 100 for i in errors_x]
+        input_y = [clamp(i, -100, 100) / 100 for i in errors_y]
+        input_angle = [i / 100 for i in errors_angle]
+        input_all = input_x + input_y + input_angle
+
+        (thruster_left, thruster_right) = controller(input_all)
+
+        if export_csv:
+            with open('data.csv', 'a') as f:
+                f.write(f"{input_all[0]},{input_all[1]},{input_all[2]},{input_all[3]},{input_all[4]},{input_all[5]},{input_all[6]},{input_all[7]},{input_all[8]},{thruster_left},{thruster_right}\n")
 
         print(f"L:{thruster_left:4.1f} R:{thruster_right:4.1f} x:{errors_x[0]:4.1f} y:{errors_y[0]:4.1f} w:{errors_angle[0]:4.1f}")
+
+        thruster_left *= 8000
+        thruster_right *= 8000
 
         drone.apply_force_at_local_point((0, thruster_left), (-50, 0))
         drone.apply_force_at_local_point((0, thruster_right), (50, 0))
