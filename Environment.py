@@ -16,8 +16,8 @@ wind_range = max_wind_force - min_wind_force
 point = (0, 0)
 FPS = 60
 
-kp_x = -2
-ki_x = -3
+kp_x = -1
+ki_x = -0.5
 kd_x = -50
 
 kp_y = 25  # Slightly reduced to lessen overshoot.
