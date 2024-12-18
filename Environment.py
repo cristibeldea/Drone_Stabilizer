@@ -3,7 +3,8 @@ import pymunk
 import pymunk.pygame_util
 import math
 import random
-import DataWriter as dw
+
+from pygame.math import clamp
 
 WIDTH, HEIGHT = 800, 600
 drone_width = 100
@@ -19,13 +20,13 @@ kp_x = 0
 ki_x = 0
 kd_x = 0
 
-kp_y = 30  # Slightly reduced to lessen overshoot.
-ki_y = 0.5  # Integral term stays moderate to counter drift.
-kd_y = 12   # Increased damping to better control oscillations.
+kp_y = 25  # Slightly reduced to lessen overshoot.
+ki_y = 30  # Integral term stays moderate to counter drift.
+kd_y = 500   # Increased damping to better control oscillations.
 
-kp_angle = 0.1   # Increase proportional term to address the tilt more aggressively.
-ki_angle = 10  # A tiny integral term to handle persistent tilt offsets.
-kd_angle = 30   # Strong damping to suppress oscillations in angular motion.
+kp_angle = 25   # Increase proportional term to address the tilt more aggressively.
+ki_angle = 30  # A tiny integral term to handle persistent tilt offsets.
+kd_angle = 500   # Strong damping to suppress oscillations in angular motion.
 
 
 
@@ -33,7 +34,7 @@ kd_angle = 30   # Strong damping to suppress oscillations in angular motion.
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 BLUE = (0, 100, 255, 255)
-
+RED = (255, 0, 0)
 
 def create_drone(space, x, y):
     body = pymunk.Body(8, pymunk.moment_for_box(8, (100, 20)))  # masă si moment de inerție
@@ -46,9 +47,6 @@ def create_drone(space, x, y):
     space.add(body, shape)
 
     return body
-
-
-RED = (255, 0, 0)
 
 
 def draw_arrow(screen, start_pos, force, color):
@@ -105,7 +103,7 @@ def PID_control_x(drone, target_position, errors_x):
     #TODO errors_x[0] = current_x - target_position[0]
 
     PID_x = kp_x * errors_x[0] + ki_x * (errors_x[0] + errors_x[1] + errors_x[2]) + kd_x * (errors_x[0] - errors_x[2])
-    return PID_x
+    return clamp(PID_x, -8000, 0)
 
 
 def PID_control_y(drone, target_position, errors_y):
@@ -117,7 +115,7 @@ def PID_control_y(drone, target_position, errors_y):
     #TODO errors_y[0] = current_y - target_position[1]
 
     PID_y = kp_y * errors_y[0] + ki_y * (errors_y[0] + errors_y[1] + errors_y[2]) + kd_y * (errors_y[0] - errors_y[2])
-    return PID_y
+    return clamp(PID_y, -8000, 0)
 
 
 def PID_control_angle(drone, target_angle, errors_angle):
@@ -130,7 +128,7 @@ def PID_control_angle(drone, target_angle, errors_angle):
 
     PID_angle = kp_angle * errors_angle[0] + ki_angle * (
                 errors_angle[0] + errors_angle[1] + errors_angle[2]) + kd_angle * (errors_angle[0] - errors_angle[2])
-    return PID_angle
+    return clamp(PID_angle, -8000, 0)
 
 
 def main():
@@ -183,7 +181,7 @@ def main():
     current_angle = drone.angle
     errors_x = [target_position[0] - current_x, target_position[0] - current_x, target_position[0] - current_x]
     errors_y = [target_position[1] - current_y, target_position[1] - current_y, target_position[1] - current_y]
-    normalized_angle = current_angle - math.pi #TODO normalize angle
+    normalized_angle = current_angle
     errors_angle = [normalized_angle - target_angle, normalized_angle - target_angle, normalized_angle - target_angle]
     ##############
 
@@ -210,13 +208,13 @@ def main():
                     print("KEY S pressed")
 
         ##############################
-        thruster_left = (PID_control_x(drone, target_position, errors_x) +
-                         PID_control_y(drone, target_position, errors_y) +
-                         PID_control_angle(drone, target_angle, errors_angle))
+        pid_ctrl_y_output       = PID_control_y(drone, target_position, errors_y)
+        pid_ctrl_x_output       = PID_control_x(drone, target_position, errors_x)
+        pid_ctrl_angle_output   = PID_control_angle(drone, target_angle, errors_angle)
 
-        thruster_right = (PID_control_y(drone, target_position, errors_y) -
-                          PID_control_x(drone, target_position, errors_x) -
-                          PID_control_angle(drone, target_angle, errors_angle))
+        thruster_left = pid_ctrl_y_output + pid_ctrl_x_output + pid_ctrl_angle_output
+        thruster_right = pid_ctrl_y_output - pid_ctrl_x_output - pid_ctrl_angle_output
+
         print(thruster_left, thruster_right)
 
         drone.apply_force_at_local_point((0, thruster_left), (-50, 0))
@@ -231,15 +229,15 @@ def main():
         #     drone.apply_force_at_local_point((0, reverse * 1 / modelCorrection * -5000.0),
         #                                      (50, 0))  # propulsor pe dreapta
 
-        #TODO
-        # elapsed_time = (pygame.time.get_ticks() - start_time) / 1000
-        # if elapsed_time >= 5:
-        #     print("10 seconds have passed! Changing the wind!")
-        #     [fx, fy] = generateForces()
-        #     print("Forta pe x: ", fx, "\n", "Forta pe y: ", fy, "\n")
-        #     start_time = pygame.time.get_ticks()
-        # simulate_wind(drone, wind_on, fx, fy)
-        # print(fx, fy)
+        # TODO
+        elapsed_time = (pygame.time.get_ticks() - start_time) / 1000
+        if elapsed_time >= 5:
+            print("10 seconds have passed! Changing the wind!")
+            [fx, fy] = generateForces()
+            print("Forta pe x: ", fx, "\n", "Forta pe y: ", fy, "\n")
+            start_time = pygame.time.get_ticks()
+        simulate_wind(drone, wind_on, fx, fy)
+        print(fx, fy)
 
         space.step(1 / FPS)
 
