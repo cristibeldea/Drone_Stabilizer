@@ -18,7 +18,7 @@ FPS = 60
 
 kp_x = -1
 ki_x = -0.5
-kd_x = -50
+kd_x = -70
 
 kp_y = 25  # Slightly reduced to lessen overshoot.
 ki_y = 30  # Integral term stays moderate to counter drift.
@@ -26,7 +26,7 @@ kd_y = 500   # Increased damping to better control oscillations.
 
 kp_angle = -500   # Increase proportional term to address the tilt more aggressively.
 ki_angle = -400  # A tiny integral term to handle persistent tilt offsets.
-kd_angle = -2500   # Strong damping to suppress oscillations in angular motion.
+kd_angle = -5500   # Strong damping to suppress oscillations in angular motion.
 
 
 
